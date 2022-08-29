@@ -13,14 +13,24 @@ use smol::{
 
 /// A backhaul implementation over raw, pipelined TCP connections.
 pub struct TcpBackhaul {
-    pool: Arc<Cache<SocketAddr, Pipeline>>,
+    /// A connection pool. This weird type is to keep track of *in-flight* connection attempts
+    pool: Arc<Cache<SocketAddr, Shared<Task<Result<Pipeline, Arc<std::io::Error>>>>>>,
 }
 
 const MAX_POOLED_CONNS: usize = 32;
 
 impl TcpBackhaul {
     async fn get_conn(&self, dest: SocketAddr) -> Result<Pipeline, std::io::Error> {
-        if self.pool.get(&dest)
+        if let Some(conn) = self.pool.get(&dest) {
+            match conn.await {
+                Ok(conn) => Ok(conn),
+                Err(err) => {
+                    self.pool.invalidate(&dest);
+                    Err(std::io::Error::new(err.kind(), err.to_string()))
+                }
+            }
+        } else {
+        }
     }
 }
 
