@@ -3,7 +3,7 @@ use std::{io::Write, task::Poll};
 use lz4_flex::frame::FrameEncoder;
 use pin_project::pin_project;
 use reusable_box_future::ReusableBoxFuture;
-use smol::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use smol::io::{AsyncWrite, AsyncWriteExt};
 
 /// An async streaming LZ4 compressor. Implements the [AsyncWrite] interface.
 #[pin_project]

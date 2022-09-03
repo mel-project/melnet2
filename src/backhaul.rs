@@ -5,10 +5,10 @@ use crate::protocol::Address;
 
 /// An implementation of an underlying transport (e.g. TCP) should implement this trait.
 #[async_trait]
-pub trait Backhaul {
+pub trait Backhaul: Send + Sync + 'static {
     type RpcTransport: RpcTransport;
-    type ConnectError;
-    type RouteError;
+    type ConnectError: std::error::Error + Send + Sync;
+    type ListenError;
 
     /// Connect to a remote address.
     async fn connect(&self, remote_addr: Address)
@@ -19,5 +19,5 @@ pub trait Backhaul {
         &self,
         local_addr: Address,
         handler: impl RpcService,
-    ) -> Result<(), Self::RouteError>;
+    ) -> Result<(), Self::ListenError>;
 }

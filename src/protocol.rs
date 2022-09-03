@@ -2,10 +2,11 @@ use std::{convert::Infallible, fmt::Display, str::FromStr};
 
 use async_trait::async_trait;
 use nanorpc::nanorpc_derive;
+use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
 /// This represents a backhaul-specific melnet address. It's essentially an immutable string.
-#[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct Address(SmolStr);
 
 impl Display for Address {
@@ -38,8 +39,8 @@ impl From<String> for Address {
 #[async_trait]
 pub trait ControlProtocol {
     /// Returns the melnet swarm ID. Used to make sure different P2P networks are not confused with each other, as well as acting as a "ping" method.
-    async fn __mn_get_swarmid(&self) -> String;
+    async fn __mn_get_swarm_id(&self) -> String;
 
-    /// Obtains *one* random peer.
-    async fn __mn_get_random_peer(&self) -> Vec<String>;
+    /// Obtains random peers.
+    async fn __mn_get_random_peers(&self) -> Vec<Address>;
 }
