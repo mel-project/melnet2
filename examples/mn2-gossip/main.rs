@@ -1,0 +1,59 @@
+use std::{
+    collections::HashSet,
+    net::SocketAddr,
+    sync::{Mutex},
+};
+
+use anyhow::Context;
+use itertools::Itertools;
+use melnet2::{
+    wire::tcp::{Pipeline, TcpBackhaul},
+    Swarm,
+};
+use protocol::{GossipClient, GossipProtocol, GossipService};
+mod protocol;
+
+struct Forwarder {
+    swarm: Swarm<TcpBackhaul, GossipClient<Pipeline>>,
+    seen: Mutex<HashSet<String>>,
+}
+
+#[async_trait::async_trait]
+impl GossipProtocol for Forwarder {
+    async fn forward(&self, msg: String) {
+        if !self.seen.lock().unwrap().insert(msg.clone()) {
+            return;
+        }
+        println!("< {msg}");
+        for route in self.swarm.routes().await {
+            let swarm = self.swarm.clone();
+            let msg = msg.clone();
+            smolscale::spawn(async move {
+                let connection = swarm.connect(route).await?;
+                connection.forward(msg).await?;
+                anyhow::Ok(())
+            })
+            .detach();
+        }
+    }
+}
+
+fn main() -> anyhow::Result<()> {
+    smolscale::block_on(async move {
+        let swarm = Swarm::new(TcpBackhaul::new(), GossipClient, "spamswarm");
+        let addr: SocketAddr = std::env::args()
+            .collect_vec()
+            .get(1)
+            .context("must provide listening address")?
+            .parse()?;
+        swarm.start_listen(
+            addr.to_string().into(),
+            Some(addr.to_string().into()),
+            GossipService(Forwarder {
+                swarm: swarm.clone(),
+                seen: Default::default(),
+            }),
+        );
+        Ok(())
+    })
+}

@@ -7,6 +7,7 @@ use std::{
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::TryFutureExt;
+use itertools::Itertools;
 use nanorpc::{OrService, RpcService, RpcTransport};
 use smol::Task;
 use smol_timeout::TimeoutExt;
@@ -16,7 +17,7 @@ use crate::{
     Backhaul,
 };
 
-use self::routedb::RouteDb;
+use self::routedb::{RouteDb};
 
 /// Represents a node in an independent P2P swarm that implements a particular RPC protocol.
 ///
@@ -76,6 +77,11 @@ where
         }
     }
 
+    /// Obtains a connection to a peer.
+    pub async fn connect(&self, addr: Address) -> Result<C, B::ConnectError> {
+        Ok((self.open_client)(self.haul.connect(addr).await?))
+    }
+
     /// Starts a listener on the given address. If `advertise_addr` is present, then advertise this address to peers asking for routes.
     pub async fn start_listen(
         &self,
@@ -96,11 +102,21 @@ where
         Ok(())
     }
 
+    /// Obtains routes.
+    pub async fn routes(&self) -> Vec<Address> {
+        self.routes
+            .read()
+            .await
+            .random_iter()
+            .map(|s| s.addr)
+            .collect_vec()
+    }
+
     /// Background loop for route maintenance.
     async fn route_maintain(
         haul: Arc<B>,
         routes: Arc<smol::lock::RwLock<RouteDb>>,
-        open_client: Arc<dyn Fn(B::RpcTransport) -> C + Sync + Send + 'static>,
+        _open_client: Arc<dyn Fn(B::RpcTransport) -> C + Sync + Send + 'static>,
         swarm_id: String,
     ) -> Infallible {
         const PULSE: Duration = Duration::from_secs(1);

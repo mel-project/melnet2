@@ -1,5 +1,6 @@
 mod backhaul;
 mod protocol;
 mod swarm;
-mod wire;
-pub use backhaul::*;
+pub mod wire;
+pub use backhaul::Backhaul;
+pub use swarm::Swarm;
