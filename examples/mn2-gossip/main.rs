@@ -1,4 +1,10 @@
-use std::{collections::HashSet, net::SocketAddr, sync::Mutex};
+use std::{
+    collections::HashSet,
+    io::Write,
+    net::SocketAddr,
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Context;
 use itertools::Itertools;
@@ -7,6 +13,7 @@ use melnet2::{
     Swarm,
 };
 use protocol::{GossipClient, GossipProtocol, GossipService};
+use smol::io::{AsyncBufReadExt, BufReader};
 mod protocol;
 
 struct Forwarder {
@@ -16,11 +23,11 @@ struct Forwarder {
 
 #[async_trait::async_trait]
 impl GossipProtocol for Forwarder {
-    async fn forward(&self, msg: String) {
+    async fn forward(&self, msg: String) -> bool {
         if !self.seen.lock().unwrap().insert(msg.clone()) {
-            return;
+            return false;
         }
-        println!("< {msg}");
+        println!("\n< {msg}");
         for route in self.swarm.routes().await {
             let swarm = self.swarm.clone();
             let msg = msg.clone();
@@ -31,6 +38,7 @@ impl GossipProtocol for Forwarder {
             })
             .detach();
         }
+        return true;
     }
 }
 
@@ -58,6 +66,21 @@ fn main() -> anyhow::Result<()> {
                 }),
             )
             .await?;
-        smol::future::pending().await
+        let mut stdin = BufReader::new(smol::Unblock::new(std::io::stdin()));
+        let mut line = String::new();
+        loop {
+            stdin.read_line(&mut line).await?;
+            if let Some(f) = swarm.routes().await.get(0) {
+                swarm
+                    .connect(f.clone())
+                    .await?
+                    .forward(format!(
+                        "{}: {}",
+                        SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+                        line.trim()
+                    ))
+                    .await?;
+            }
+        }
     })
 }

@@ -79,6 +79,12 @@ impl Backhaul for TcpBackhaul {
     }
 }
 
+impl Default for TcpBackhaul {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TcpBackhaul {
     /// Creates a new TcpBackhaul.
     pub fn new() -> Self {

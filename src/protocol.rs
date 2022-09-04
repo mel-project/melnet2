@@ -43,4 +43,7 @@ pub trait ControlProtocol {
 
     /// Obtains random peers.
     async fn __mn_get_random_peers(&self) -> Vec<Address>;
+
+    /// Attempts to add a peer to the table. Does not return success or failure.
+    async fn __mn_advertise_peer(&self, peer: Address) -> bool;
 }

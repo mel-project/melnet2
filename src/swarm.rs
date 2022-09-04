@@ -19,6 +19,8 @@ use crate::{
 
 use self::routedb::RouteDb;
 
+const ROUTE_LIMIT: usize = 32;
+
 /// Represents a node in an independent P2P swarm that implements a particular RPC protocol.
 ///
 /// This is generic over a backhaul, so different transports can be plugged in easily, as well as a client-level handle (e.g. the `FoobarClient` that `nanorpc`'s macros generate from a `FoobarProtocol` trait). We are intentionally generic over the second one to statically prevent confusion between swarms that run incompatible RPC protocols; the combination of backhaul and client uniquely identifies a network compatible with a particular protocol.
@@ -126,15 +128,53 @@ where
         swarm_id: String,
     ) -> Infallible {
         const PULSE: Duration = Duration::from_secs(1);
-        const ROUTE_LIMIT: usize = 32;
         let mut timer = smol::Timer::interval(PULSE);
         let exec = smol::Executor::new();
         // we run timers on a roughly Poisson distribution in order to avoid synchronized patterns emerging
         exec.run(async {
             loop {
+                if fastrand::f64() * 3.0 < 1.0 {
+                    log::debug!("[{swarm_id}] push pulse");
+                    if let Some(random) = routes.read().await.random_iter().next() {
+                        if let Some(to_send) = routes
+                            .read()
+                            .await
+                            .random_iter()
+                            .find(|r| r.addr != random.addr)
+                        {
+                            let random = random.addr;
+                            let to_send = to_send.addr;
+                            log::debug!("[{swarm_id}] push {to_send} => {random}");
+                            let random2 = random.clone();
+                            exec.spawn(
+                                async {
+                                    let to_send = to_send;
+                                    let random = random;
+                                    let conn = ControlClient(
+                                        haul.connect(random)
+                                            .timeout(Duration::from_secs(60))
+                                            .await
+                                            .context("connect timeout")??,
+                                    );
+                                    conn.__mn_advertise_peer(to_send)
+                                        .timeout(Duration::from_secs(60))
+                                        .await
+                                        .context("advertise timeout")??;
+                                    anyhow::Ok(())
+                                }
+                                .unwrap_or_else(|e| {
+                                    let random2 = random2;
+                                    log::warn!("[{swarm_id}] push failed to {}: {e}", random2)
+                                }),
+                            )
+                            .detach();
+                        }
+                    }
+                }
+
                 if fastrand::f64() * 10.0 < 1.0 {
                     let current_count = routes.read().await.count();
-                    log::debug!("[{swarm_id}] count pulse {current_count}/{ROUTE_LIMIT}");
+                    log::debug!("[{swarm_id}] pull pulse {current_count}/{ROUTE_LIMIT}");
                     if current_count < ROUTE_LIMIT {
                         // we request more routes from a random peer
                         if let Some(route) = routes.read().await.random_iter().next() {
@@ -240,7 +280,10 @@ where
 }
 
 #[async_trait]
-impl<B: Backhaul, C> ControlProtocol for Swarm<B, C> {
+impl<B: Backhaul, C: 'static> ControlProtocol for Swarm<B, C>
+where
+    <B::RpcTransport as RpcTransport>::Error: std::error::Error + Send + Sync,
+{
     async fn __mn_get_swarm_id(&self) -> String {
         self.swarm_id.clone()
     }
@@ -253,6 +296,16 @@ impl<B: Backhaul, C> ControlProtocol for Swarm<B, C> {
             .take(8)
             .map(|r| r.addr)
             .collect()
+    }
+
+    async fn __mn_advertise_peer(&self, addr: Address) -> bool {
+        if self.routes.read().await.count() >= ROUTE_LIMIT {
+            return false;
+        }
+        if let Ok(ping) = Self::test_ping(&self.haul, addr.clone(), &self.swarm_id).await {
+            self.routes.write().await.insert(addr, ping, false);
+        }
+        return true;
     }
 }
 
