@@ -17,7 +17,7 @@ use crate::{
     Backhaul,
 };
 
-use self::routedb::{RouteDb};
+use self::routedb::RouteDb;
 
 /// Represents a node in an independent P2P swarm that implements a particular RPC protocol.
 ///
@@ -110,6 +110,12 @@ where
             .random_iter()
             .map(|s| s.addr)
             .collect_vec()
+    }
+
+    /// Adds a route, specifying whether or not it's "sticky" (will never be evicted)
+    pub async fn add_route(&self, addr: Address, sticky: bool) {
+        let mut v = self.routes.write().await;
+        v.insert(addr, Duration::from_secs(1), sticky);
     }
 
     /// Background loop for route maintenance.

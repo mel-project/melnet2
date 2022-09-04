@@ -1,8 +1,4 @@
-use std::{
-    collections::HashSet,
-    net::SocketAddr,
-    sync::{Mutex},
-};
+use std::{collections::HashSet, net::SocketAddr, sync::Mutex};
 
 use anyhow::Context;
 use itertools::Itertools;
@@ -39,6 +35,7 @@ impl GossipProtocol for Forwarder {
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::init();
     smolscale::block_on(async move {
         let swarm = Swarm::new(TcpBackhaul::new(), GossipClient, "spamswarm");
         let addr: SocketAddr = std::env::args()
@@ -46,14 +43,21 @@ fn main() -> anyhow::Result<()> {
             .get(1)
             .context("must provide listening address")?
             .parse()?;
-        swarm.start_listen(
-            addr.to_string().into(),
-            Some(addr.to_string().into()),
-            GossipService(Forwarder {
-                swarm: swarm.clone(),
-                seen: Default::default(),
-            }),
-        );
-        Ok(())
+        let args = std::env::args().collect_vec();
+        for rest in args.into_iter().skip(2) {
+            let addr: SocketAddr = rest.parse()?;
+            swarm.add_route(addr.to_string().into(), false).await;
+        }
+        swarm
+            .start_listen(
+                addr.to_string().into(),
+                Some(addr.to_string().into()),
+                GossipService(Forwarder {
+                    swarm: swarm.clone(),
+                    seen: Default::default(),
+                }),
+            )
+            .await?;
+        smol::future::pending().await
     })
 }

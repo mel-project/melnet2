@@ -26,3 +26,6 @@ smol-timeout = "0.6.0"
 smol_str = "0.1.23"
 smolscale = "0.3.29"
 thiserror = "1.0.32"
+
+[dev-dependencies]
+env_logger="0.8"
