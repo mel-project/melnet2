@@ -1,6 +1,5 @@
 use std::{
     collections::HashSet,
-    io::Write,
     net::SocketAddr,
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
