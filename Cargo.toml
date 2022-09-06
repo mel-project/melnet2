@@ -3,6 +3,10 @@ name = "melnet2"
 version = "0.1.0"
 edition = "2021"
 
+description = "JSON-RPC/nanorpc-based, low-level auto-peering RPC protocol used throughout Themelio for peer-to-peer communciations"
+license = "ISC"
+repository = "https://github.com/themeliolabs/melnet2"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
