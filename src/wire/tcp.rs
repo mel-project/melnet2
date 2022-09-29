@@ -63,7 +63,10 @@ impl Backhaul for TcpBackhaul {
                     let handler = handler.clone();
                     loop {
                         line.clear();
-                        (&mut up).take(1024 * 1024).read_line(&mut line).await?;
+                        (&mut up)
+                            .take(10 * 1024 * 1024)
+                            .read_line(&mut line)
+                            .await?;
                         let response = handler.respond_raw(serde_json::from_str(&line)?).await;
                         let response = serde_json::to_vec(&response)?;
                         down.write_all(&response).await?;
