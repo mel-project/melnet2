@@ -63,10 +63,7 @@ impl Backhaul for TcpBackhaul {
                     let handler = handler.clone();
                     loop {
                         line.clear();
-                        (&mut up)
-                            .take(10 * 1024 * 1024)
-                            .read_line(&mut line)
-                            .await?;
+                        (&mut up).take(MAX_LINE_LENGTH).read_line(&mut line).await?;
                         let response = handler.respond_raw(serde_json::from_str(&line)?).await;
                         let response = serde_json::to_vec(&response)?;
                         down.write_all(&response).await?;
@@ -186,12 +183,12 @@ impl Pipeline {
     }
 }
 
+const MAX_LINE_LENGTH: u64 = 10 * 1024 * 1024;
+
 async fn pipeline_inner(
     mut ustream: TcpStream,
     recv_req: Receiver<(String, Sender<String>)>,
 ) -> Result<Infallible, Arc<std::io::Error>> {
-    const MAX_LINE_LENGTH: u64 = 1024 * 1024;
-
     let queue = ConcurrentQueue::unbounded();
     let mut dstream = BufReader::new(ustream.clone());
     let up = async {
