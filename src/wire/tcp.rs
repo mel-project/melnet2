@@ -183,7 +183,7 @@ impl Pipeline {
     }
 }
 
-const MAX_LINE_LENGTH: u64 = 10 * 1024 * 1024;
+const MAX_LINE_LENGTH: u64 = 100 * 1024 * 1024;
 
 async fn pipeline_inner(
     mut ustream: TcpStream,
