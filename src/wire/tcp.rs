@@ -91,7 +91,7 @@ impl TcpBackhaul {
         let pool = Arc::new(
             Cache::builder()
                 .max_capacity(256)
-                .time_to_idle(Duration::from_secs(60))
+                .time_to_live(Duration::from_secs(60))
                 .build(),
         );
         let listeners = Arc::new(DashMap::new());
@@ -113,7 +113,7 @@ impl TcpBackhaul {
                 let pipe_task = smolscale::spawn(async move {
                     let tcp_conn = smol::net::TcpStream::connect(dest)
                         .or(async {
-                            smol::Timer::after(Duration::from_secs(30)).await;
+                            smol::Timer::after(Duration::from_secs(5)).await;
                             Err(std::io::Error::new(
                                 std::io::ErrorKind::TimedOut,
                                 "TCP connect timed out",
