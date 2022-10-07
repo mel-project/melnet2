@@ -7,16 +7,13 @@ use std::{
 
 use anyhow::Context;
 use itertools::Itertools;
-use melnet2::{
-    wire::tcp::{Pipeline, TcpBackhaul},
-    Swarm,
-};
+use melnet2::{wire::tcp::TcpBackhaul, Backhaul, Swarm};
 use protocol::{GossipClient, GossipProtocol, GossipService};
 use smol::io::{AsyncBufReadExt, BufReader};
 mod protocol;
 
 struct Forwarder {
-    swarm: Swarm<TcpBackhaul, GossipClient<Pipeline>>,
+    swarm: Swarm<TcpBackhaul, GossipClient<<TcpBackhaul as Backhaul>::RpcTransport>>,
     seen: Mutex<HashSet<String>>,
 }
 
