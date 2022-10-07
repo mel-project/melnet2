@@ -13,6 +13,7 @@ use smol::{
     net::{TcpListener, TcpStream},
     Task,
 };
+use smol_timeout::TimeoutExt;
 use thiserror::Error;
 
 use crate::{protocol::Address, Backhaul};
@@ -149,14 +150,25 @@ impl RpcTransport for Pipeline {
     type Error = PipelineError;
 
     async fn call_raw(&self, req: JrpcRequest) -> Result<JrpcResponse, Self::Error> {
-        let to_send = serde_json::to_string(&req).map_err(PipelineError::JsonError)?;
-        let result = self
-            .request(to_send)
+        let fallible = async {
+            let to_send = serde_json::to_string(&req).map_err(PipelineError::JsonError)?;
+            let result = self
+                .request(to_send)
+                .await
+                .map_err(PipelineError::IoError)?;
+            let result: JrpcResponse =
+                serde_json::from_str(&result).map_err(PipelineError::JsonError)?;
+            Ok(result)
+        };
+        Ok(fallible
+            .timeout(Duration::from_secs(10))
             .await
-            .map_err(PipelineError::IoError)?;
-        let result: JrpcResponse =
-            serde_json::from_str(&result).map_err(PipelineError::JsonError)?;
-        Ok(result)
+            .ok_or_else(|| {
+                PipelineError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "timed out in pipeline",
+                ))
+            })??)
     }
 }
 
