@@ -92,7 +92,7 @@ impl TcpBackhaul {
         let pool = Arc::new(
             Cache::builder()
                 .max_capacity(256)
-                .time_to_live(Duration::from_secs(60))
+                .time_to_live(Duration::from_secs(1))
                 .build(),
         );
         let listeners = Arc::new(DashMap::new());
