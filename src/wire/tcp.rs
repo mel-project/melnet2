@@ -22,7 +22,7 @@ use crate::{protocol::Address, Backhaul};
 #[allow(clippy::type_complexity)]
 pub struct TcpBackhaul {
     /// A connection pool. This weird type is to keep track of *in-flight* connection attempts
-    pool: Arc<Cache<SocketAddr, Shared<Task<Result<Pipeline, Arc<std::io::Error>>>>>>,
+    pool: Arc<Cache<SocketAddr, Pipeline>>,
 
     /// A mapping between addresses and listeners.
     listeners: Arc<DashMap<SocketAddr, Task<()>>>,
@@ -100,31 +100,21 @@ impl TcpBackhaul {
     }
 
     async fn get_conn(&self, dest: SocketAddr) -> Result<Pipeline, std::io::Error> {
-        loop {
-            if let Some(conn) = self.pool.get(&dest) {
-                match conn.await {
-                    Ok(conn) => return Ok(conn),
-                    Err(err) => {
-                        self.pool.invalidate(&dest);
-                        return Err(std::io::Error::new(err.kind(), err.to_string()));
-                    }
-                }
-            } else {
-                // make a task that resolves to a pipeline
-                let pipe_task = smolscale::spawn(async move {
-                    let tcp_conn = smol::net::TcpStream::connect(dest)
-                        .or(async {
-                            smol::Timer::after(Duration::from_secs(5)).await;
-                            Err(std::io::Error::new(
-                                std::io::ErrorKind::TimedOut,
-                                "TCP connect timed out",
-                            ))
-                        })
-                        .await;
-                    Ok(Pipeline::new(tcp_conn?))
-                });
-                self.pool.insert(dest, pipe_task.shared());
-            }
+        if let Some(conn) = self.pool.get(&dest) {
+            Ok(conn)
+        } else {
+            let tcp_conn = smol::net::TcpStream::connect(dest)
+                .or(async {
+                    smol::Timer::after(Duration::from_secs(5)).await;
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "TCP connect timed out",
+                    ))
+                })
+                .await?;
+            let pipe = Pipeline::new(tcp_conn);
+            self.pool.insert(dest, pipe.clone());
+            Ok(pipe)
         }
     }
 }
