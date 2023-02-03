@@ -1,5 +1,5 @@
 use std::{
-    convert::Infallible, fmt::Display, net::SocketAddr, str::FromStr, sync::Arc, time::Duration,
+    convert::Infallible, net::SocketAddr, str::FromStr, sync::Arc, time::Duration,
 };
 
 use async_trait::async_trait;
@@ -10,7 +10,7 @@ use moka::sync::Cache;
 use nanorpc::{JrpcRequest, JrpcResponse, RpcService, RpcTransport};
 use smol::{
     channel::{Receiver, Sender},
-    future::{Boxed, FutureExt as SmolFutureExt},
+    future::{FutureExt as SmolFutureExt},
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{TcpListener, TcpStream},
     Task,
@@ -31,42 +31,9 @@ pub struct TcpBackhaul {
     listeners: Arc<DashMap<SocketAddr, Task<()>>>,
 }
 
-/// Errors that an [AutoconnectTransport] can run into.
-#[derive(Error, Debug)]
-pub enum AutoconnectError<E: Display, F: Display> {
-    #[error("connect error: {0}")]
-    ConnectError(E),
-    #[error("transport: {0}")]
-    TransportError(F),
-}
-
-/// An RpcTransport that wraps around a function that produces RpcTransports and provides an "immortal" RpcTransport that creates the actual RpcTransport on demand.
-pub struct AutoconnectTransport<Inner: RpcTransport, ConnectError: Display> {
-    produce: Box<dyn Fn() -> Boxed<Result<Inner, ConnectError>> + Send + Sync + 'static>,
-}
-
-#[async_trait]
-impl<Inner: RpcTransport, ConnectError: Display + 'static + Send + Sync> RpcTransport
-    for AutoconnectTransport<Inner, ConnectError>
-where
-    Inner::Error: Display,
-{
-    type Error = AutoconnectError<ConnectError, Inner::Error>;
-    async fn call_raw(&self, req: JrpcRequest) -> Result<JrpcResponse, Self::Error> {
-        let conn = (self.produce)()
-            .await
-            .map_err(AutoconnectError::ConnectError)?;
-        let resp = conn
-            .call_raw(req)
-            .await
-            .map_err(AutoconnectError::TransportError)?;
-        Ok(resp)
-    }
-}
-
 #[async_trait]
 impl Backhaul for TcpBackhaul {
-    type RpcTransport = AutoconnectTransport<Pipeline, std::io::Error>;
+    type RpcTransport = Pipeline;
     type ConnectError = std::io::Error;
     type ListenError = std::io::Error;
 
@@ -76,16 +43,7 @@ impl Backhaul for TcpBackhaul {
     ) -> Result<Self::RpcTransport, Self::ConnectError> {
         let addr: SocketAddr = SocketAddr::from_str(&remote_addr.to_string())
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Unsupported, e.to_string()))?;
-        let _conn = self.get_conn(addr).await?;
-        // okay we know that we are *able* to get the conn now, and the conn is hopefully in the cache already.
-        // we construct the AutoconnectTransport
-        let this = self.clone();
-        Ok(AutoconnectTransport {
-            produce: Box::new(move || {
-                let this = this.clone();
-                Box::pin(async move { this.get_conn(addr).await })
-            }),
-        })
+        Ok(self.get_conn(addr).await?)
     }
 
     async fn start_listen(
