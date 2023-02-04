@@ -8,7 +8,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::TryFutureExt;
 use itertools::Itertools;
-use nanorpc::{OrService, RpcService, RpcTransport};
+use nanorpc::{DynRpcTransport, OrService, RpcService, RpcTransport};
 use smol::Task;
 use smol_timeout::TimeoutExt;
 
@@ -30,7 +30,7 @@ pub struct Swarm<B: Backhaul, C> {
     /// Route storage. Protected by an *async* RwLock
     routes: Arc<smol::lock::RwLock<RouteDb>>,
     /// Something that creates an RpcClient from a backhaul RpcTransport
-    open_client: Arc<dyn Fn(B::RpcTransport) -> C + Sync + Send + 'static>,
+    open_client: Arc<dyn Fn(DynRpcTransport) -> C + Sync + Send + 'static>,
     /// Swarm ID
     swarm_id: String,
 
@@ -57,7 +57,7 @@ where
     /// Creates a new [Swarm] given a backhaul, and a function that maps a raw transport to a client-level handle.
     pub fn new(
         backhaul: B,
-        client_map_fn: impl Fn(B::RpcTransport) -> C + Sync + Send + 'static,
+        client_map_fn: impl Fn(DynRpcTransport) -> C + Sync + Send + 'static,
         swarm_id: &str,
     ) -> Self {
         let haul = Arc::new(backhaul);
@@ -81,7 +81,16 @@ where
 
     /// Obtains a connection to a peer.
     pub async fn connect(&self, addr: Address) -> Result<C, B::ConnectError> {
-        Ok((self.open_client)(self.haul.connect(addr).await?))
+        Ok((self.open_client)(DynRpcTransport::new(
+            self.haul.connect(addr).await?,
+        )))
+    }
+
+    /// Obtains a connection to a peer that defers connection failures to use-time automatically reconnects.
+    pub async fn connect_lazy(&self, addr: Address) -> Result<C, B::ConnectError> {
+        Ok((self.open_client)(DynRpcTransport::new(
+            self.haul.connect_lazy(addr).await,
+        )))
     }
 
     /// Starts a listener on the given address. If `advertise_addr` is present, then advertise this address to peers asking for routes.
@@ -124,7 +133,7 @@ where
     async fn route_maintain(
         haul: Arc<B>,
         routes: Arc<smol::lock::RwLock<RouteDb>>,
-        _open_client: Arc<dyn Fn(B::RpcTransport) -> C + Sync + Send + 'static>,
+        _open_client: Arc<dyn Fn(DynRpcTransport) -> C + Sync + Send + 'static>,
         swarm_id: String,
     ) -> Infallible {
         const PULSE: Duration = Duration::from_secs(1);

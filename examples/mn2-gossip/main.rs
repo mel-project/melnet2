@@ -13,7 +13,7 @@ use smol::io::{AsyncBufReadExt, BufReader};
 mod protocol;
 
 struct Forwarder {
-    swarm: Swarm<TcpBackhaul, GossipClient<<TcpBackhaul as Backhaul>::RpcTransport>>,
+    swarm: Swarm<TcpBackhaul, GossipClient>,
     seen: Mutex<HashSet<String>>,
 }
 
