@@ -1,6 +1,6 @@
 [package]
 name = "melnet2"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 description = "JSON-RPC/nanorpc-based, low-level auto-peering RPC protocol used throughout Themelio for peer-to-peer communciations"
