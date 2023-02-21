@@ -7,13 +7,13 @@ use std::{
 
 use anyhow::Context;
 use itertools::Itertools;
-use melnet2::{wire::tcp::TcpBackhaul, Backhaul, Swarm};
+use melnet2::{wire::http::HttpBackhaul, Swarm};
 use protocol::{GossipClient, GossipProtocol, GossipService};
 use smol::io::{AsyncBufReadExt, BufReader};
 mod protocol;
 
 struct Forwarder {
-    swarm: Swarm<TcpBackhaul, GossipClient>,
+    swarm: Swarm<HttpBackhaul, GossipClient>,
     seen: Mutex<HashSet<String>>,
 }
 
@@ -41,7 +41,7 @@ impl GossipProtocol for Forwarder {
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     smolscale::block_on(async move {
-        let swarm = Swarm::new(TcpBackhaul::new(), GossipClient, "spamswarm");
+        let swarm = Swarm::new(HttpBackhaul::new(), GossipClient, "spamswarm");
         let addr: SocketAddr = std::env::args()
             .collect_vec()
             .get(1)

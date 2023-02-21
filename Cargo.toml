@@ -21,6 +21,7 @@ log = "0.4.17"
 lz4_flex = "0.9.5"
 moka = "0.9.6"
 nanorpc = "0.1.12"
+nanorpc-http = "0.1.0"
 pin-project = "1.0.12"
 reusable-box-future = "0.2.0"
 serde = { version = "1.0.147", features = ["derive"] }
