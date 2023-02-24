@@ -1,6 +1,6 @@
 use std::{
     convert::Infallible,
-    sync::Arc,
+    sync::{Arc, Weak},
     time::{Duration, Instant},
 };
 
@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use futures_util::TryFutureExt;
 use itertools::Itertools;
 use nanorpc::{DynRpcTransport, OrService, RpcService, RpcTransport};
-use smol::Task;
+use smol::{lock::RwLock, Task};
 use smol_timeout::TimeoutExt;
 
 use crate::{
@@ -100,9 +100,18 @@ where
         advertise_addr: Option<Address>,
         service: impl RpcService,
     ) -> Result<(), B::ListenError> {
-        let self2 = self.clone();
         self.haul
-            .start_listen(listen_addr, OrService::new(service, ControlService(self2)))
+            .start_listen(
+                listen_addr,
+                OrService::new(
+                    service,
+                    ControlService(ControlProtocolImpl {
+                        swarm_id: self.swarm_id.clone(),
+                        routes: self.routes.clone(),
+                        weak_haul: Arc::downgrade(&self.haul),
+                    }),
+                ),
+            )
             .await?;
         if let Some(advertise_addr) = advertise_addr {
             self.routes
@@ -209,7 +218,7 @@ where
                                             route.addr,
                                             peer
                                         );
-                                        let ping = Self::test_ping(&haul, peer.clone(), &swarm_id)
+                                        let ping = test_ping(&haul, peer.clone(), &swarm_id)
                                             .await
                                             .context("ping failed")?;
                                         routes.write().await.insert(peer, ping, false)
@@ -238,8 +247,7 @@ where
                     for route in routes_guard.random_iter() {
                         exec.spawn(async {
                             let route = route;
-                            if let Err(err) =
-                                Self::test_ping(&haul, route.addr.clone(), &swarm_id).await
+                            if let Err(err) = test_ping(&haul, route.addr.clone(), &swarm_id).await
                             {
                                 if route.sticky {
                                     log::debug!(
@@ -263,33 +271,16 @@ where
         })
         .await
     }
+}
 
-    async fn test_ping(haul: &B, addr: Address, swarm_id: &str) -> anyhow::Result<Duration> {
-        let start = Instant::now();
-        let client = ControlClient(
-            haul.connect(addr)
-                .timeout(Duration::from_secs(5))
-                .await
-                .context("connect timed out after 5 seconds")??,
-        );
-        let their_swarm_id = client
-            .__mn_get_swarm_id()
-            .timeout(Duration::from_secs(5))
-            .await
-            .context("ping timed out after 5 seconds")??;
-        if their_swarm_id != swarm_id {
-            anyhow::bail!(
-                "their swarm ID {:?} is not our swarm ID {:?}",
-                their_swarm_id,
-                swarm_id
-            );
-        }
-        Ok(start.elapsed())
-    }
+struct ControlProtocolImpl<B: Backhaul> {
+    swarm_id: String,
+    routes: Arc<RwLock<RouteDb>>,
+    weak_haul: Weak<B>,
 }
 
 #[async_trait]
-impl<B: Backhaul, C: 'static> ControlProtocol for Swarm<B, C>
+impl<B: Backhaul> ControlProtocol for ControlProtocolImpl<B>
 where
     <B::RpcTransport as RpcTransport>::Error: std::error::Error + Send + Sync,
 {
@@ -311,11 +302,43 @@ where
         if self.routes.read().await.count() >= ROUTE_LIMIT {
             return false;
         }
-        if let Ok(ping) = Self::test_ping(&self.haul, addr.clone(), &self.swarm_id).await {
-            self.routes.write().await.insert(addr, ping, false);
+        if let Some(haul) = self.weak_haul.upgrade() {
+            if let Ok(ping) = test_ping(&haul, addr.clone(), &self.swarm_id).await {
+                self.routes.write().await.insert(addr, ping, false);
+            }
         }
         return true;
     }
+}
+
+async fn test_ping<B: Backhaul>(
+    haul: &Arc<B>,
+    addr: Address,
+    swarm_id: &str,
+) -> anyhow::Result<Duration>
+where
+    <B::RpcTransport as RpcTransport>::Error: std::error::Error + Send + Sync,
+{
+    let start = Instant::now();
+    let client = ControlClient(
+        haul.connect(addr)
+            .timeout(Duration::from_secs(5))
+            .await
+            .context("connect timed out after 5 seconds")??,
+    );
+    let their_swarm_id = client
+        .__mn_get_swarm_id()
+        .timeout(Duration::from_secs(5))
+        .await
+        .context("ping timed out after 5 seconds")??;
+    if their_swarm_id != swarm_id {
+        anyhow::bail!(
+            "their swarm ID {:?} is not our swarm ID {:?}",
+            their_swarm_id,
+            swarm_id
+        );
+    }
+    Ok(start.elapsed())
 }
 
 mod routedb {
