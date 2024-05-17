@@ -11,7 +11,10 @@ use smol_str::SmolStr;
 #[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct Address(SmolStr);
 
-impl<T: AsRef<str>> From<T> for Address {
+impl<T: AsRef<str>> From<T> for Address
+where
+    SmolStr: From<T>,
+{
     fn from(t: T) -> Self {
         Self(t.into())
     }
