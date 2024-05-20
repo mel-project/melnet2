@@ -5,8 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::Context;
-use itertools::Itertools;
+use clap::Parser;
 use melnet2::{wire::http::HttpBackhaul, Swarm};
 use protocol::{GossipClient, GossipProtocol, GossipService};
 use smol::io::{AsyncBufReadExt, BufReader};
@@ -38,19 +37,22 @@ impl GossipProtocol for Forwarder {
     }
 }
 
+#[derive(Parser)]
+struct Args {
+    listening_address: SocketAddr,
+    extras: Option<Vec<SocketAddr>>,
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
+    let args = Args::parse();
     smolscale::block_on(async move {
         let swarm = Swarm::new(HttpBackhaul::new(), GossipClient, "spamswarm");
-        let addr: SocketAddr = std::env::args()
-            .collect_vec()
-            .get(1)
-            .context("must provide listening address")?
-            .parse()?;
-        let args = std::env::args().collect_vec();
-        for rest in args.into_iter().skip(2) {
-            let addr: SocketAddr = rest.parse()?;
-            swarm.add_route(addr.to_string().into(), false).await;
+        let addr: SocketAddr = args.listening_address;
+        if let Some(vec) = args.extras {
+            for entry in vec {
+                swarm.add_route(entry.to_string().into(), false).await;
+            }
         }
         swarm
             .start_listen(
