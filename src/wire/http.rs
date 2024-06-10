@@ -32,9 +32,22 @@ impl Backhaul for HttpBackhaul {
         &self,
         remote_addr: Address,
     ) -> Result<Self::RpcTransport, Self::ConnectError> {
-        let addr: SocketAddr = SocketAddr::from_str(&remote_addr.to_string())
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Unsupported, e.to_string()))?;
-        Ok(self.get_conn(addr).await?)
+        let addr = match SocketAddr::from_str(&remote_addr.to_string()) {
+            Ok(addr) => addr,
+            Err(_) => {
+                let resolved: Vec<SocketAddr> = smol::net::resolve(remote_addr.to_string()).await?;
+                if resolved.is_empty() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "invalid remote_addr",
+                    ));
+                } else {
+                    resolved.first().cloned().unwrap()
+                }
+            }
+        };
+
+        self.get_conn(addr).await.map_err(Into::into)
     }
 
     async fn start_listen(
