@@ -112,7 +112,7 @@ impl HttpBackhaul {
         if let Some(conn) = self.pool.get(&dest) {
             Ok(conn)
         } else {
-            let pipe = Arc::new(HttpRpcTransport::new(dest, self.proxy.clone()));
+            let pipe = Arc::new(HttpRpcTransport::new(dest.to_string(), self.proxy.clone()));
             self.pool.insert(dest, pipe.clone());
             Ok(pipe)
         }
