@@ -6,7 +6,10 @@ use dashmap::DashMap;
 
 use moka::sync::Cache;
 use nanorpc::RpcService;
-use nanorpc_http::{client::HttpRpcTransport, server::HttpRpcServer};
+use nanorpc_http::{
+    client::{HttpRpcTransport, Proxy},
+    server::HttpRpcServer,
+};
 use smol::Task;
 
 use crate::{protocol::Address, Backhaul};
@@ -20,6 +23,8 @@ pub struct HttpBackhaul {
 
     /// A mapping between addresses and listeners.
     listeners: Arc<DashMap<SocketAddr, Task<()>>>,
+
+    proxy: Proxy,
 }
 
 #[async_trait]
@@ -81,14 +86,33 @@ impl HttpBackhaul {
                 .build(),
         );
         let listeners = Arc::new(DashMap::new());
-        Self { pool, listeners }
+        Self {
+            pool,
+            listeners,
+            proxy: Proxy::Direct,
+        }
+    }
+
+    /// Creates a new TcpBackhaul.
+    pub fn new_with_proxy(proxy: Proxy) -> Self {
+        let pool = Arc::new(
+            Cache::builder()
+                .time_to_idle(Duration::from_secs(60))
+                .build(),
+        );
+        let listeners = Arc::new(DashMap::new());
+        Self {
+            pool,
+            listeners,
+            proxy,
+        }
     }
 
     async fn get_conn(&self, dest: SocketAddr) -> Result<Arc<HttpRpcTransport>, std::io::Error> {
         if let Some(conn) = self.pool.get(&dest) {
             Ok(conn)
         } else {
-            let pipe = Arc::new(HttpRpcTransport::new(dest));
+            let pipe = Arc::new(HttpRpcTransport::new(dest, self.proxy.clone()));
             self.pool.insert(dest, pipe.clone());
             Ok(pipe)
         }
