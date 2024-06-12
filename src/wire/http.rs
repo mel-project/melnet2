@@ -19,7 +19,7 @@ use crate::{protocol::Address, Backhaul};
 #[derive(Clone)]
 pub struct HttpBackhaul {
     /// A connection pool.
-    pool: Arc<Cache<SocketAddr, Arc<HttpRpcTransport>>>,
+    pool: Arc<Cache<String, Arc<HttpRpcTransport>>>,
 
     /// A mapping between addresses and listeners.
     listeners: Arc<DashMap<SocketAddr, Task<()>>>,
@@ -38,18 +38,8 @@ impl Backhaul for HttpBackhaul {
         remote_addr: Address,
     ) -> Result<Self::RpcTransport, Self::ConnectError> {
         let addr = match SocketAddr::from_str(&remote_addr.to_string()) {
-            Ok(addr) => addr,
-            Err(_) => {
-                let resolved: Vec<SocketAddr> = smol::net::resolve(remote_addr.to_string()).await?;
-                if resolved.is_empty() {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Unsupported,
-                        "invalid remote_addr",
-                    ));
-                } else {
-                    resolved.first().cloned().unwrap()
-                }
-            }
+            Ok(addr) => addr.to_string(),
+            Err(_) => remote_addr.to_string(),
         };
 
         self.get_conn(addr).await.map_err(Into::into)
@@ -78,7 +68,7 @@ impl Default for HttpBackhaul {
 }
 
 impl HttpBackhaul {
-    /// Creates a new TcpBackhaul.
+    /// Creates a new HttpBackhaul.
     pub fn new() -> Self {
         let pool = Arc::new(
             Cache::builder()
@@ -93,7 +83,7 @@ impl HttpBackhaul {
         }
     }
 
-    /// Creates a new TcpBackhaul.
+    /// Creates a new HttpBackhaul with a proxy.
     pub fn new_with_proxy(proxy: Proxy) -> Self {
         let pool = Arc::new(
             Cache::builder()
@@ -108,11 +98,11 @@ impl HttpBackhaul {
         }
     }
 
-    async fn get_conn(&self, dest: SocketAddr) -> Result<Arc<HttpRpcTransport>, std::io::Error> {
+    async fn get_conn(&self, dest: String) -> Result<Arc<HttpRpcTransport>, std::io::Error> {
         if let Some(conn) = self.pool.get(&dest) {
             Ok(conn)
         } else {
-            let pipe = Arc::new(HttpRpcTransport::new(dest.to_string(), self.proxy.clone()));
+            let pipe = Arc::new(HttpRpcTransport::new(dest.clone(), self.proxy.clone()));
             self.pool.insert(dest, pipe.clone());
             Ok(pipe)
         }
