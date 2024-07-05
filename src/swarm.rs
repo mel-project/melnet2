@@ -139,6 +139,7 @@ where
     }
 
     /// Background loop for route maintenance.
+    #[allow(clippy::redundant_locals)]
     async fn route_maintain(
         haul: Arc<B>,
         routes: Arc<smol::lock::RwLock<RouteDb>>,

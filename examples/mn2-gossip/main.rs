@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
         let mut line = String::new();
         loop {
             stdin.read_line(&mut line).await?;
-            if let Some(f) = swarm.routes().await.get(0) {
+            if let Some(f) = swarm.routes().await.first() {
                 swarm
                     .connect(f.clone())
                     .await?
